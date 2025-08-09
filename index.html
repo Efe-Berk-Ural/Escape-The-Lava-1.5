@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>Escape the Lava - v1.5</title>
+<style>
+  :root{--bg:#0b0f1a;--panel:#1b1f27;--accent:#ff4d2d;--muted:#8b8f96}
+  html,body{height:100%;margin:0;padding:0;background:var(--bg);font-family:Inter, Arial, sans-serif;color:#fff}
+  body{display:flex;align-items:center;justify-content:center;flex-direction:column;user-select:none}
+  canvas{background:linear-gradient(180deg,#001022 0%, #330000 100%);border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.6);touch-action:none}
+  #ui-row{width:360px;display:flex;justify-content:space-between;margin-top:10px}
+  .control{width:64px;height:64px;border-radius:10px;border:none;background:#222;color:#fff;font-size:28px}
+  .control:active{background:var(--accent)}
+  #menu, #shop, #gameOverPanel{position:absolute;top:40px;left:50%;transform:translateX(-50%);background:var(--panel);padding:18px;border-radius:10px;box-shadow:0 6px 30px rgba(0,0,0,.6);display:none;z-index:20}
+  #menu h2,#shop h3{margin:0 0 10px 0}
+  #menu .row, #shop .row{display:flex;gap:8px;align-items:center}
+  button.menuBtn{background:var(--accent);border:none;padding:8px 14px;border-radius:8px;font-size:16px;cursor:pointer}
+  .smallBtn{background:#333;border:none;padding:6px 10px;border-radius:8px;color:#fff;cursor:pointer}
+  #shop-list{max-height:220px;overflow:auto;margin-top:10px;padding:6px;border-radius:8px;background:#0f1114;border:1px solid rgba(255,77,45,.12)}
+  .skin-item{display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:6px;border:1px solid #2b2f35;margin-bottom:6px}
+  .skin-item.owned{border-color:#15b15d}
+  .skin-item.selected{background:rgba(255,77,45,.12)}
+  #footer{position:fixed;bottom:6px;width:100%;text-align:center;color:var(--muted);font-size:13px}
+  #hud{position:absolute;left:12px;top:12px;color:#fff;font-size:15px}
+  #hud .row{margin-bottom:6px}
+  #powerups{position:absolute;right:12px;top:12px;text-align:right}
+  .power-pill{background:#222;padding:6px 8px;border-radius:8px;margin-bottom:6px;font-size:13px}
+  #stageToast{position:absolute;left:50%;transform:translateX(-50%);top:120px;background:rgba(0,0,0,.5);padding:8px 14px;border-radius:8px;display:none}
+  /* responsive */
+  @media(max-width:420px){canvas{width:320px;height:520px}#ui-row{width:320px}}
+</style>
+</head>
+<body>
+<canvas id="game" width="360" height="600"></canvas>
+
+<div id="menu">
+  <h2>Escape the Lava — v1.5</h2>
+  <div class="row">
+    <button class="menuBtn" id="startBtn">Start Game</button>
+    <button class="smallBtn" id="shopBtn">Shop</button>
+    <button class="smallBtn" id="resetDataBtn">Reset Data</button>
+  </div>
+  <hr style="border:none;border-top:1px solid rgba(255,255,255,.06);margin:10px 0">
+  <div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div>
+        <strong>Choose Lava Type:</strong>
+      </div>
+      <div id="lavaPreview" style="font-size:18px;opacity:.9">Red (Normal)</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="smallBtn" data-lava="red">Red</button>
+      <button class="smallBtn" data-lava="blue">Blue</button>
+      <button class="smallBtn" data-lava="purple">Purple</button>
+    </div>
+  </div>
+  <div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">
+    <div>
+      <div style="font-size:13px;color:var(--muted)">Stars (saved)</div>
+      <div id="savedStars" style="font-size:18px">0 ⭐</div>
+    </div>
+    <div>
+      <div style="font-size:13px;color:var(--muted)">Selected Skin</div>
+      <div id="menuSkinPreview" style="font-size:22px">🧗‍♂️</div>
+    </div>
+  </div>
+</div>
+
+<div id="shop">
+  <h3>Shop</h3>
+  <div id="starsCount">Stars: 0</div>
+  <div id="shop-list"></div>
+  <div style="display:flex;gap:8px;margin-top:8px">
+    <button class="smallBtn" id="backBtn">Back</button>
+    <button class="smallBtn" id="dailyBtn">Daily Tasks</button>
+  </div>
+</div>
+
+<div id="gameOverPanel">
+  <h3 id="goTitle">Game Over</h3>
+  <div id="goStats"></div>
+  <div style="margin-top:10px;display:flex;gap:8px">
+    <button class="menuBtn" id="goMenuBtn">Main Menu</button>
+    <button class="smallBtn" id="goRestartBtn">Restart</button>
+  </div>
+</div>
+
+<div id="ui-row">
+  <button class="control" id="leftBtn">◀</button>
+  <button class="control" id="upBtn">▲</button>
+  <button class="control" id="rightBtn">▶</button>
+</div>
+
+<div id="hud">
+  <div class="row" id="timeTxt">Time: 0s</div>
+  <div class="row" id="starsTxt">Stars: 0</div>
+  <div class="row" id="livesTxt">Lives: ❤️❤️❤️</div>
+</div>
+
+<div id="powerups"></div>
+<div id="stageToast"></div>
+<div id="footer">© Efe Berk Ural</div>
+
+<script>
+(() => {
+  // --- canvas & basics ---
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  let W = canvas.width, H = canvas.height;
+  const DPR = Math.max(1, window.devicePixelRatio || 1);
+  canvas.width = W * DPR; canvas.height = H * DPR; canvas.style.width = W + 'px'; canvas.style.height = H + 'px'; ctx.scale(DPR, DPR);
+
+  // UI elements
+  const menu = document.getElementById('menu');
+  const shop = document.getElementById('shop');
+  const startBtn = document.getElementById('startBtn');
+  const shopBtn = document.getElementById('shopBtn');
+  const backBtn = document.getElementById('backBtn');
+  const starsCountEl = document.getElementById('starsCount');
+  const shopList = document.getElementById('shop-list');
+  const savedStarsEl = document.getElementById('savedStars');
+  const menuSkinPreview = document.getElementById('menuSkinPreview');
+  const lavaPreview = document.getElementById('lavaPreview');
+  const resetDataBtn = document.getElementById('resetDataBtn');
+  const powerupsEl = document.getElementById('powerups');
+  const stageToast = document.getElementById('stageToast');
+  const goPanel = document.getElementById('gameOverPanel');
+  const goStats = document.getElementById('goStats');
+  const goMenuBtn = document.getElementById('goMenuBtn');
+  const goRestartBtn = document.getElementById('goRestartBtn');
+  const savedStarsDisplay = document.getElementById('savedStars');
+
+  // HUD
+  const timeTxt = document.getElementById('timeTxt');
+  const starsTxt = document.getElementById('starsTxt');
+  const livesTxt = document.getElementById('livesTxt');
+
+  // Controls
+  const leftBtn = document.getElementById('leftBtn');
+  const rightBtn = document.getElementById('rightBtn');
+  const upBtn = document.getElementById('upBtn');
+
+  // Game world
+  const worldHeight = 12000; // taller
+  const worldWidth = W;
+  let cameraY = worldHeight - H;
+
+  // Player
+  let player = {width:44,height:44,x:W/2-22,y:worldHeight-140,vy:0,gravity:0.9,jumpPower:-16,speed:5,onGround:false,skin:0,lives:3};
+
+  // Platforms, stars, powerups, obstacles
+  let platforms = [], stars = [], rocks = [], movingPlatforms = [], vanishingPlatforms = [], powerups = [];
+
+  // Particles
+  let particles = [];
+
+  // Game state
+  let elapsed = 0, lastTS = 0, gameOver = false, running = false;
+  let lavaY = worldHeight, baseLavaSpeed = 25, lavaMultiplier = 1; // pixels per second
+  let totalCollectedThisRun = 0;
+  let stage = 1, stageHeight = 2000;
+  let lavaType = localStorage.getItem('etl_lava') || 'red';
+
+  // skins & shop
+  const skins = [
+    {emoji:'🧗‍♂️',price:0,key:0},
+    {emoji:'🦸‍♂️',price:10,key:1},
+    {emoji:'🧙‍♂️',price:20,key:2},
+    {emoji:'👽',price:30,key:3},
+    {emoji:'🤖',price:40,key:4},
+    {emoji:'✨',price:100,key:5,unlockTask:'star_hunter'}
+  ];
+  let ownedSkins = JSON.parse(localStorage.getItem('etl_ownedSkins')||'[0]');
+  let savedStars = parseInt(localStorage.getItem('etl_stars')||'0',10);
+  let selectedSkin = parseInt(localStorage.getItem('etl_selectedSkin')||'0',10);
+  player.skin = selectedSkin;
+
+  // achievements & tasks
+  const achievements = JSON.parse(localStorage.getItem('etl_achievements')||'{}');
+  const tasks = JSON.parse(localStorage.getItem('etl_tasks')||'{}');
+
+  // powerup timers
+  let activePowerups = {doubleStars:0, slowLava:0, superJump:0};
+
+  // input
+  let keys = {left:false,right:false,up:false};
+
+  // --- helpers ---
+  function saveData(){
+    localStorage.setItem('etl_stars', String(savedStars));
+    localStorage.setItem('etl_ownedSkins', JSON.stringify(ownedSkins));
+    localStorage.setItem('etl_selectedSkin', String(selectedSkin));
+    localStorage.setItem('etl_lava', lavaType);
+    localStorage.setItem('etl_achievements', JSON.stringify(achievements));
+    localStorage.setItem('etl_tasks', JSON.stringify(tasks));
+  }
+
+  function resetAllData(){
+    if(!confirm('Reset all saved data?')) return;
+    localStorage.removeItem('etl_stars');
+    localStorage.removeItem('etl_ownedSkins');
+    localStorage.removeItem('etl_selectedSkin');
+    localStorage.removeItem('etl_achievements');
+    localStorage.removeItem('etl_tasks');
+    localStorage.removeItem('etl_lava');
+    ownedSkins = [0]; savedStars = 0; selectedSkin = 0; lavaType = 'red';
+    updateShopList(); updateSavedStars(); updateMenuSkinPreview(); updateLavaPreview();
+    saveData();
+    alert('Data reset.');
+  }
+
+  function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+
+  // --- generation ---
+  function generateInitial(){
+    platforms = [];
+    // ground
+    platforms.push({x:0,y:worldHeight-60,width:worldWidth,height:60,type:'static'});
+    // random platforms upwards, mixture of static, moving, vanishing
+    let y = worldHeight-150;
+    while(y>0){
+      let w = 70 + Math.random()*110;
+      let x = Math.random()*(worldWidth-w);
+      let r = Math.random();
+      if(r<0.12){ // moving
+        platforms.push({x,y,width:w,height:14,type:'moving',dir:Math.random()<.5?1:-1,range:40+Math.random()*80,speed:0.6+Math.random()*0.9,originX:x});
+      } else if(r<0.2){ // vanishing
+        platforms.push({x,y,width:w,height:14,type:'vanish',timer:0});
+      } else {
+        platforms.push({x,y,width:w,height:14,type:'static'});
+      }
+      if(Math.random()<0.15){ // star on platform
+        stars.push({x:x+10+Math.random()*(w-20),y:y-26,width:20,height:20,collected:false});
+      }
+      if(Math.random()<0.08){ // small chance of powerup
+        powerups.push({x:x+10+Math.random()*(w-30),y:y-36,type:['double','slow','jump'][Math.floor(Math.random()*3)],collected:false});
+      }
+      y -= 80 + Math.random()*80;
+    }
+
+    // generate some falling rocks positions (they spawn during the run)
+    rocks = [];
+
+    // reset player
+    player.x = W/2 - player.width/2; player.y = worldHeight-140; player.vy = 0; player.onGround=false; player.lives=3; player.skin = selectedSkin;
+    cameraY = player.y - H/2;
+    lavaY = worldHeight + 100; stage = 1; elapsed = 0; totalCollectedThisRun = 0;
+    particles = []; movingPlatforms = platforms.filter(p=>p.type==='moving'); vanishingPlatforms = platforms.filter(p=>p.type==='vanish');
+  }
+
+  // --- shop ---
+  function updateShopList(){
+    shopList.innerHTML = '';
+    skins.forEach((s,i)=>{
+      const div = document.createElement('div'); div.className='skin-item';
+      if(ownedSkins.includes(i)) div.classList.add('owned');
+      if(selectedSkin===i) div.classList.add('selected');
+      div.innerHTML = `<div style="font-size:20px">${s.emoji}</div><div style="text-align:right">${s.price} ⭐<br><button class='smallBtn' data-index='${i}'>${ownedSkins.includes(i)?'Select':'Buy'}</button></div>`;
+      const btn = div.querySelector('button'); btn.addEventListener('click',()=>{
+        if(ownedSkins.includes(i)){ selectedSkin=i; player.skin=i; menuSkinPreview.textContent = skins[selectedSkin].emoji; saveData(); updateShopList(); } else {
+          if(savedStars>=s.price){ savedStars -= s.price; ownedSkins.push(i); selectedSkin=i; player.skin=i; menuSkinPreview.textContent = skins[selectedSkin].emoji; updateSavedStars(); saveData(); updateShopList(); alert('Purchased!'); }
+          else alert('Not enough stars');
+        }
+      });
+      shopList.appendChild(div);
+    });
+    starsCountEl.textContent = `Stars: ${savedStars}`;
+  }
+
+  function updateSavedStars(){ savedStarsDisplay.textContent = `${savedStars} ⭐`; starsCountEl.textContent = `Stars: ${savedStars}`; }
+  updateSavedStars(); updateShopList();
+
+  // lava preview & menu skin preview
+  function updateMenuSkinPreview(){ menuSkinPreview.textContent = skins[selectedSkin].emoji; }
+  function updateLavaPreview(){
+    if(lavaType==='red') lavaPreview.textContent = 'Red (Normal)';
+    if(lavaType==='blue') lavaPreview.textContent = 'Blue (Fast)';
+    if(lavaType==='purple') lavaPreview.textContent = 'Purple (Deadly)';
+  }
+  updateMenuSkinPreview(); updateLavaPreview();
+
+  // --- input handlers ---
+  window.addEventListener('keydown', e=>{
+    if(e.key==='ArrowLeft') keys.left=true;
+    if(e.key==='ArrowRight') keys.right=true;
+    if(e.key==='ArrowUp' || e.key===' ') keys.up=true;
+  });
+  window.addEventListener('keyup', e=>{
+    if(e.key==='ArrowLeft') keys.left=false;
+    if(e.key==='ArrowRight') keys.right=false;
+    if(e.key==='ArrowUp' || e.key===' ') keys.up=false;
+  });
+  leftBtn.addEventListener('touchstart',e=>{e.preventDefault();keys.left=true}); leftBtn.addEventListener('touchend',e=>{e.preventDefault();keys.left=false});
+  rightBtn.addEventListener('touchstart',e=>{e.preventDefault();keys.right=true}); rightBtn.addEventListener('touchend',e=>{e.preventDefault();keys.right=false});
+  upBtn.addEventListener('touchstart',e=>{e.preventDefault();keys.up=true}); upBtn.addEventListener('touchend',e=>{e.preventDefault();keys.up=false});
+
+  // --- collisions ---
+  function rectsOverlap(a,b){ return a.x < b.x+b.width && a.x+a.width > b.x && a.y < b.y+b.height && a.y+a.height > b.y }
+
+  // --- particles ---
+  function spawnParticles(x,y,color,count=12){ for(let i=0;i<count;i++){ particles.push({x,y,vx:(Math.random()-0.5)*3,vy:(Math.random()-1.5)*-2,life:30+Math.random()*30,color}) } }
+
+  // --- powerups ---
+  function applyPowerup(type){ if(type==='double') activePowerups.doubleStars = 10*60; if(type==='slow') activePowerups.slowLava = 10*60; if(type==='jump') activePowerups.superJump = 5*60; }
+
+  // --- rocks spawn ---
+  function maybeSpawnRock(){ if(Math.random()<0.02 + stage*0.005){ // chance scales with stage
+      const rx = Math.random()* (worldWidth-24);
+      rocks.push({x:rx,y:cameraY-40 - Math.random()*200 - 60,width:24,height:24,vy:2+Math.random()*3});
+    }}
+
+  // --- stage handling ---
+  function checkStage(){ const target = worldHeight - stage*stageHeight; if(player.y < target){ stage++; // new stage
+      // change atmosphere: add more moving platforms, reset lava speed multiplier
+      lavaMultiplier = 1; // reset multiplier on stage
+      showStageToast('Stage '+(stage-1)+' complete!');
+      // add some extra platforms
+      for(let i=0;i<8;i++){ let w = 70+Math.random()*110; let x = Math.random()*(worldWidth-w); let y = target - (i*120) - 100; if(Math.random()<0.2) platforms.push({x,y,width:w,height:14,type:'vanish'}); else platforms.push({x,y,width:w,height:14,type:'static'}); if(Math.random()<0.18) stars.push({x:x+10+Math.random()*(w-20),y:y-26,width:20,height:20,collected:false}); }
+    }}
+
+  function showStageToast(txt){ stageToast.textContent = txt; stageToast.style.display='block'; setTimeout(()=>stageToast.style.display='none',2000); }
+
+  // --- game loop ---
+  function gameLoop(ts=0){ if(!running) return; if(!lastTS) lastTS=ts; const dt = (ts-lastTS)/1000; lastTS=ts; elapsed += dt;
+
+    // update powerup timers (in frames approx) - we store as frames count earlier; convert dt to frames
+    Object.keys(activePowerups).forEach(k=>{ if(activePowerups[k]>0) activePowerups[k] = Math.max(0, activePowerups[k] - 60*dt); });
+
+    // input movement
+    if(keys.left) player.x -= player.speed; if(keys.right) player.x += player.speed; player.x = clamp(player.x,0,worldWidth-player.width);
+    if(keys.up && player.onGround){ player.vy = (activePowerups.superJump>0)? player.jumpPower*1.6 : player.jumpPower; player.onGround=false; }
+
+    // gravity & movement
+    player.vy += player.gravity; player.y += player.vy;
+
+    // moving platforms update
+    movingPlatforms.forEach(p=>{ p.originX = p.originX || p.x; p.x = p.originX + Math.sin((performance.now()/1000)*p.speed)*p.range; });
+
+    // vanish platforms timer logic
+    vanishingPlatforms.forEach(p=>{ if(p.timer>0){ p.timer -= dt; if(p.timer<=0){ // remove platform and spawn small particle
+          spawnParticles(p.x + p.width/2, p.y, 'orange', 20); platforms = platforms.filter(pp=>pp!==p); vanishingPlatforms = vanishingPlatforms.filter(pp=>pp!==p);
+        } } });
+
+    // platform collision
+    player.onGround = false;
+    for(let p of platforms){
+      if(player.x + player.width > p.x && player.x < p.x + p.width && player.y + player.height > p.y && player.y + player.height < p.y + p.height + 12 && player.vy >= 0){
+        player.y = p.y - player.height; player.vy = 0; player.onGround = true;
+        // if vanish platform, start timer
+        if(p.type==='vanish' && p.timer<=0) p.timer = 2; // 2 seconds
+      }
+    }
+
+    // collect stars
+    stars.forEach(s=>{ if(!s.collected && player.x < s.x + s.width && player.x + player.width > s.x && player.y < s.y + s.height && player.y + player.height > s.y){ s.collected = true; const gained = (activePowerups.doubleStars>0)?2:1; totalCollectedThisRun += gained; savedStars += gained; spawnParticles(s.x+8,s.y,'gold',18); updateSavedStars(); } });
+    // collect powerups
+    powerups.forEach(pu=>{ if(!pu.collected && player.x < pu.x+20 && player.x+player.width > pu.x && player.y < pu.y+20 && player.y+player.height > pu.y){ pu.collected = true; applyPowerup(pu.type); spawnParticles(pu.x,pu.y,'white',16); } });
+
+    // rocks falling
+    rocks.forEach(r=>{ r.y += r.vy; if(r.y > cameraY + H + 80) r.off = true; if(r.y + r.height > player.y && r.y < player.y + player.height && r.x + r.width > player.x && r.x < player.x + player.width){ // hit
+        r.off = true; player.lives -= 1; spawnParticles(player.x+player.width/2, player.y+player.height/2,'red',30); if(player.lives<=0){ endRun(false); }
+      }});
+
+    rocks = rocks.filter(r=>!r.off);
+    maybeSpawnRock();
+
+    // camera follows
+    cameraY = player.y - H/2; cameraY = clamp(cameraY, 0, worldHeight - H);
+
+    // lava speed and type handling
+    if(activePowerups.slowLava>0) lavaMultiplier = 0.3; else lavaMultiplier = 1;
+    // lava type affects multiplier base
+    let typeSpeedMult = 1; if(lavaType==='blue') typeSpeedMult = 1.6; if(lavaType==='purple') typeSpeedMult = 2.4;
+    // increasing lava speed gradually
+    lavaY -= baseLavaSpeed * lavaMultiplier * typeSpeedMult * dt;
+
+    // game over if lava reaches player (player.y+height > lavaY)
+    if(player.y + player.height > lavaY){ // player touched lava
+      // for purple lava, instant death
+      if(lavaType==='purple'){ endRun(false); }
+      else { player.lives -= 1; spawnParticles(player.x+player.width/2, player.y+player.height/2,'orange',30); player.y = Math.min(player.y - 120, worldHeight-200); if(player.lives<=0) endRun(false); }
+    }
+
+    // check falls below world (off screen)
+    if(player.y > worldHeight + 200){ player.lives -=1; if(player.lives<=0) endRun(false); else { player.y = worldHeight - 200; player.vy = 0; } }
+
+    // achievements check
+    if(totalCollectedThisRun >= 20) { if(!achievements.star_hunter){ achievements.star_hunter = Date.now(); savedStars += 20; ownedSkins.push(5); saveData(); } }
+
+    // stage check
+    checkStage();
+
+    // particles update
+    particles.forEach(p=>{ p.x += p.vx; p.y += p.vy; p.vy += 0.06; p.life -= 1; }); particles = particles.filter(p=>p.life>0);
+
+    // UI update
+    timeTxt.textContent = `Time: ${Math.floor(elapsed)}s`;
+    starsTxt.textContent = `Stars: ${totalCollectedThisRun}`;
+    livesTxt.textContent = 'Lives: ' + '❤️'.repeat(player.lives);
+
+    // draw
+    render();
+    lastFrame = requestAnimationFrame(gameLoop);
+  }
+
+  // --- rendering ---
+  function render(){
+    // clear
+    ctx.clearRect(0,0,W,H);
+
+    // parallax background
+    // sky gradient changes by height
+    const t = clamp((worldHeight - cameraY)/worldHeight,0,1);
+    const g1 = ctx.createLinearGradient(0,0,0,H);
+    g1.addColorStop(0, '#001022'); g1.addColorStop(0.6, '#330000'); g1.addColorStop(1, '#110000');
+    ctx.fillStyle = g1; ctx.fillRect(0,0,W,H);
+
+    // simple stars/background shapes
+    for(let i=0;i<6;i++){ ctx.globalAlpha = 0.03; ctx.fillStyle='#fff'; ctx.fillRect((i*73)%W, (i*91 + cameraY*0.02)%H, 2,2); } ctx.globalAlpha = 1;
+
+    // platforms
+    ctx.fillStyle = '#8b8f96';
+    for(let p of platforms){ ctx.fillRect(p.x, p.y - cameraY, p.width, p.height); if(p.type==='vanish'){ ctx.fillStyle='rgba(255,200,80,.6)'; ctx.fillRect(p.x,p.y-cameraY,p.width,2); ctx.fillStyle='#8b8f96'; } }
+
+    // powerups
+    powerups.forEach(p=>{ if(!p.collected){ ctx.font='20px serif'; if(p.type==='double') ctx.fillText('⭐x2', p.x, p.y - cameraY); if(p.type==='slow') ctx.fillText('🐢', p.x, p.y - cameraY); if(p.type==='jump') ctx.fillText('⬆️', p.x, p.y - cameraY); } });
+
+    // stars
+    ctx.font='22px serif';
+    stars.forEach(s=>{ if(!s.collected) ctx.fillText('⭐', s.x, s.y - cameraY); });
+
+    // player
+    ctx.font = `${player.height}px serif`;
+    ctx.fillText(skins[player.skin].emoji, player.x, player.y - cameraY);
+
+    // rocks
+    ctx.fillStyle='saddlebrown'; rocks.forEach(r=>{ ctx.fillRect(r.x, r.y - cameraY, r.width, r.height); });
+
+    // lava
+    if(lavaType==='red') ctx.fillStyle = 'orangered';
+    if(lavaType==='blue') ctx.fillStyle = '#ff7f50';
+    if(lavaType==='purple') ctx.fillStyle = '#b347ff';
+    ctx.fillRect(0, lavaY - cameraY, W, H - (lavaY - cameraY));
+
+    // particles
+    particles.forEach(p=>{ ctx.globalAlpha = clamp(p.life/60,0,1); ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y - cameraY, 3,3); ctx.globalAlpha = 1; });
+
+    // powerup UI
+    powerupsEl.innerHTML = '';
+    if(activePowerups.doubleStars>0) { const d = Math.ceil(activePowerups.doubleStars/60); const div = document.createElement('div'); div.className='power-pill'; div.textContent = `2x Stars: ${d}s`; powerupsEl.appendChild(div); }
+    if(activePowerups.slowLava>0) { const d = Math.ceil(activePowerups.slowLava/60); const div = document.createElement('div'); div.className='power-pill'; div.textContent = `Slow Lava: ${d}s`; powerupsEl.appendChild(div); }
+    if(activePowerups.superJump>0) { const d = Math.ceil(activePowerups.superJump/60); const div = document.createElement('div'); div.className='power-pill'; div.textContent = `Super Jump: ${d}s`; powerupsEl.appendChild(div); }
+  }
+
+  // --- end run ---
+  function endRun(success){ running = false; gameOver = true; cancelAnimationFrame(lastFrame); // save collected stars
+    savedStars = Math.max(0, savedStars); saveData();
+    goPanel.style.display='block'; goStats.innerHTML = `<div>Stars this run: ${totalCollectedThisRun}</div><div>Stage reached: ${stage}</div><div>Time: ${Math.floor(elapsed)}s</div>`;
+    if(success) document.getElementById('goTitle').textContent = 'You Win!'; else document.getElementById('goTitle').textContent = 'Game Over!';
+    // show menu button handled outside
+  }
+
+  // --- UI actions ---
+  startBtn.addEventListener('click', ()=>{ showMenu(false); startGame(); });
+  shopBtn.addEventListener('click', ()=>{ showShop(true); });
+  backBtn.addEventListener('click', ()=>{ showShop(false); showMenu(true); });
+  resetDataBtn.addEventListener('click', resetAllData);
+  goMenuBtn.addEventListener('click', ()=>{ goPanel.style.display='none'; showMenu(true); });
+  goRestartBtn.addEventListener('click', ()=>{ goPanel.style.display='none'; startGame(); });
+
+  // lava selection
+  menu.querySelectorAll('button[data-lava]').forEach(b=>{ b.addEventListener('click',()=>{ lavaType = b.dataset.lava; updateLavaPreview(); saveData(); }); });
+
+  // show/hide helpers
+  function showMenu(show=true){ menu.style.display = show?'block':'none'; shop.style.display='none'; uiVisible(false); }
+  function showShop(show=true){ shop.style.display = show?'block':'none'; menu.style.display='none'; uiVisible(false); updateShopList(); }
+  function uiVisible(v){ document.getElementById('ui-row').style.display = v?'flex':'none'; }
+
+  // start game
+  let lastFrame = 0;
+  function startGame(){ goPanel.style.display='none'; running=true; gameOver=false; generateInitial(); updateSavedStars(); updateShopList(); updateMenuSkinPreview(); lastTS = 0; requestAnimationFrame(gameLoop); uiVisible(true); }
+
+  // initial
+  showMenu(true);
+
+  // helper: update menu skin preview
+  function updateMenuSkinPreview(){ menuSkinPreview.textContent = skins[selectedSkin].emoji; }
+
+  // update saved stars on load
+  updateSavedStars();
+
+  // window resize handler (basic)
+  window.addEventListener('resize', ()=>{ /* optional: adapt scale */ });
+
+})();
+</script>
+</body>
+</html>
